@@ -10,7 +10,7 @@ import { BarChart, RankedList } from '../components/Charts';
 import { InvoiceCard, WorkCard } from '../components/cards';
 import { formatMoney, formatNumber, monthKeyOf, monthLabelShort } from '../lib/format';
 import { ROLE_LABELS, can } from '../lib/permissions';
-
+import AppHeader from './AppHeader';
 export default function HomeScreen() {
   const c = usePalette();
   const nav = useNavigation<any>();
@@ -63,9 +63,16 @@ export default function HomeScreen() {
   };
 
   const compactMoney = (v: number) => (v >= 1000 ? `${formatNumber(Math.round(v / 1000))}k` : formatNumber(Math.round(v)));
-
-  return (
+return (
+  <>
+    <AppHeader />
     <ScrollView
+      style={{ flex: 1, backgroundColor: ... }}
+      // ... باقي الكود بالكامل دون تغيير
+      // ...
+    </ScrollView>
+  </>
+);
       style={{ flex: 1, backgroundColor: c.bg }}
       contentContainerStyle={{ paddingBottom: 120 }}
       showsVerticalScrollIndicator={false}
