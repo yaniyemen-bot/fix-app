@@ -1,9 +1,10 @@
 {
   "expo": {
-    "name": "vvoice-hano",
-    "slug": "vvoice-hano",
+    "name": "Agon Preview",
+    "slug": "agon-preview",
     "version": "1.2.1",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
@@ -18,24 +19,31 @@
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.REQUEST_INSTALL_PACKAGES"
       ],
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
       "predictiveBackGestureEnabled": false
     },
     "web": {
+      "favicon": "./assets/favicon.png",
       "bundler": "metro",
       "output": "single"
     },
     "extra": {
       "eas": {
-        "projectId": "bf98160b-0ddc-479d-858f-668307cd5a4e"
+        "projectId": "552f0665-e30d-4f11-9ea9-97bc22a22809"
       }
     },
     "updates": {
-      "url": "https://expo.dev"
+      "url": "https://u.expo.dev/552f0665-e30d-4f11-9ea9-97bc22a22809"
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "owner": "yaniyemen",
+    "owner": "arcadalabs",
     "platforms": [
       "ios",
       "android",
