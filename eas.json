@@ -1,7 +1,6 @@
 {
   "cli": {
-    "version": ">= 3.0.0",
-    "appVersionSource": "remote"
+    "version": ">= 10.2.2"
   },
   "build": {
     "development": {
@@ -11,19 +10,10 @@
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease"
-      },
-      "env": {
-        "EXPO_NO_TELEMETRY": "1"
+        "buildType": "apk"
       }
     },
-    "production": {
-      "autoIncrement": true,
-      "android": {
-        "buildType": "app-bundle"
-      }
-    }
+    "production": {}
   },
   "submit": {
     "production": {}
