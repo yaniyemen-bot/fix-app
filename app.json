@@ -38,12 +38,12 @@
       }
     },
     "updates": {
-      "url": "https://u.expo.dev/552f0665-e30d-4f11-9ea9-97bc22a22809"
+      "url": "https://expo.dev"
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "owner": "arcadalabs",
+    "owner": "yaniyemen-bot",
     "platforms": [
       "ios",
       "android",
@@ -51,6 +51,7 @@
     ],
     "plugins": [
       "expo-font"
-    ]
+    ],
+    "sdkVersion": "57.0.0"
   }
 }
