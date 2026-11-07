@@ -43,7 +43,7 @@
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "owner": "yaniyemen-bot",
+    "owner": "yaniyemen",
     "platforms": [
       "ios",
       "android",
