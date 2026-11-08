@@ -318,7 +318,24 @@ function QuickAction({
       </View>
       <Text style={[rtlText, { color: '#fff', fontSize: 11, fontWeight: '700', textAlign: 'center' }]} numberOfLines={1}>
         {label}
-      </Text>
+      </Text>{/* 1. ابحث عن نص العنوان (مثل إيرادات / عملاء) وقم بتحديث الخصائص لتبدو هكذا: */}
+<Text 
+  style={styles.cardTitle} // حافظ على الـ style الأصلي الخاص بك كما هو
+  numberOfLines={1} 
+  adjustsFontSizeToFit={true}
+  minimumFontScale={0.7} // يسمح بتصغير الخط حتى 70% من حجمه الأصلي ليظهر النص كاملاً دون انقاص
+>
+  {item.title} 
+</Text>
+{/* 2. ابحث عن نص القيمة الماليّة أو الرقمية داخل نفس الكرت وحدثه هكذا: */}
+<Text 
+  style={styles.cardValue} // حافظ على الـ style الأصلي الخاص بك كما هو
+  numberOfLines={1}
+  adjustsFontSizeToFit={true}
+  minimumFontScale={0.6} // يضمن ظهور الأرقام الكبيرة والعملة بالكامل دون نقاط
+>
+  {item.value}
+</Text>
     </Pressable>
   );
 }
