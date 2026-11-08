@@ -27,6 +27,26 @@ import {
   uid,
 } from '../lib/format';
 
+// ================= التعريفات المالية الجديدة مدمجة ومحكمة =================
+export interface CashFlow {
+  id: string;
+  type: 'income' | 'expense';
+  details: string;
+  amount: number;
+  date: string;
+}
+
+export interface Voucher {
+  id: string;
+  voucherNumber: string;
+  type: 'receipt' | 'payment';
+  invoiceId?: string;
+  companyId?: string;
+  amount: number;
+  date: string;
+  description: string;
+}
+
 interface ToastState {
   id: number;
   message: string;
@@ -38,6 +58,8 @@ interface AppContextValue {
   companies: Company[];
   works: Work[];
   invoices: Invoice[];
+  cashFlows: CashFlow[]; // مضاف حديثاً
+  vouchers: Voucher[];   // مضاف حديثاً
   settings: Settings;
   users: AppUser[];
   currentUser: AppUser;
@@ -70,6 +92,9 @@ interface AppContextValue {
   setInvoiceStatus: (id: ID, status: InvoiceStatus) => void;
   updateInvoiceNotes: (id: ID, notes: string) => void;
   deleteInvoice: (id: ID) => void;
+  // المالية والسندات مضاف حديثاً
+  addCashFlow: (cashFlow: Omit<CashFlow, 'id'>) => void;
+  addVoucherAndUpdateInvoice: (voucher: Omit<Voucher, 'id' | 'voucherNumber'>, invoiceId?: string) => void;
   // settings
   updateSettings: (patch: Partial<Settings>) => void;
   updateCurrency: (currency: CurrencySettings) => void;
@@ -93,14 +118,19 @@ const FALLBACK_USER: AppUser = { id: 'u_manager', name: 'المدير', role: 'm
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [data, setData] = useState<AppData>(() => ({
+  
+  // الحالات المحدثة مع دعم مصفوفات الحسابات والسندات
+  const [data, setData] = useState<AppData & { cashFlows?: CashFlow[]; vouchers?: Voucher[] }>(() => ({
     companies: [],
     works: [],
     invoices: [],
     settings: DEFAULT_SETTINGS,
     users: [],
     currentUserId: '',
+    cashFlows: [],
+    vouchers: [],
   }));
+
   const [toast, setToast] = useState<ToastState | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedOnce = useRef(false);
@@ -116,11 +146,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const stored = await loadData();
       if (!alive) return;
       if (stored && stored.companies.length >= 0 && stored.users.length) {
-        setData(stored);
+        // حماية البيانات القديمة وإضافة المصفوفات الجديدة في حال لم تكن موجودة بالتخزين
+        setData({
+          ...stored,
+          cashFlows: stored.cashFlows || [],
+          vouchers: stored.vouchers || [],
+          invoices: (stored.invoices || []).map((inv: any) => ({
+            ...inv,
+            paidAmount: inv.paidAmount !== undefined ? inv.paidAmount : (inv.status === 'paid' ? inv.total : 0),
+            remainingAmount: inv.remainingAmount !== undefined ? inv.remainingAmount : (inv.status === 'paid' ? 0 : inv.total),
+            paymentStatus: inv.paymentStatus !== undefined ? inv.paymentStatus : (inv.status === 'paid' ? 'paid' : 'unpaid'),
+          })),
+        });
       } else {
         const seeded = buildSeedData();
-        setData(seeded);
-        await saveData(seeded);
+        const initialData = { ...seeded, cashFlows: [], vouchers: [] };
+        setData(initialData);
+        await saveData(initialData);
       }
       loadedOnce.current = true;
       setReady(true);
@@ -268,384 +310,3 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         inv.workIds.includes(id) ? { ...inv, workIds: inv.workIds.filter((x) => x !== id) } : inv
       ),
     }));
-  }, []);
-
-  const unlinkWork = useCallback((id: ID) => {
-    setData((d) => {
-      const work = d.works.find((w) => w.id === id);
-      if (!work || !work.invoiceId) return d;
-      const invoiceId = work.invoiceId;
-      const invoice = d.invoices.find((i) => i.id === invoiceId);
-      const remainingIds = invoice ? invoice.workIds.filter((x) => x !== id) : [];
-      const remainingWorks = remainingIds
-        .map((wid) => d.works.find((w) => w.id === wid))
-        .filter(Boolean) as Work[];
-      const subtotal = remainingWorks.reduce((s, w) => s + w.quantity * w.unitPrice, 0);
-      return {
-        ...d,
-        works: d.works.map((w) => (w.id === id ? { ...w, invoiceId: null } : w)),
-        invoices: invoice
-          ? d.invoices.map((i) => {
-              if (i.id !== invoiceId) return i;
-              const discount = Math.min(i.discount, subtotal);
-              const taxAmount = Math.round((subtotal - discount) * (i.taxRate / 100) * 100) / 100;
-              return {
-                ...i,
-                workIds: remainingIds,
-                subtotal,
-                discount,
-                taxAmount,
-                total: Math.round((subtotal - discount + taxAmount) * 100) / 100,
-              };
-            })
-          : d.invoices,
-      };
-    });
-  }, []);
-
-  const createInvoice = useCallback<AppContextValue['createInvoice']>((input) => {
-    if (!input.workIds.length) return null;
-    const d = dataRef.current;
-    const items = input.workIds.map((id) => d.works.find((w) => w.id === id)).filter(Boolean) as Work[];
-    if (!items.length) return null;
-    const subtotal = items.reduce((s, w) => s + (Number(w.quantity) || 0) * (Number(w.unitPrice) || 0), 0);
-    const discount = Math.max(0, Math.min(input.discount || 0, subtotal));
-    const taxRate = Math.max(0, Number(input.taxRate) || 0);
-    const taxAmount = Math.round((subtotal - discount) * (taxRate / 100) * 100) / 100;
-    const total = Math.round((subtotal - discount + taxAmount) * 100) / 100;
-    const issueDate = input.issueDate ?? todayISO();
-    const dueDate = input.dueDate ?? addDays(issueDate, d.settings.paymentTermsDays || 14);
-    const invoice: Invoice = {
-      id: uid('inv'),
-      number: nextInvoiceNumber(d.invoices),
-      companyId: input.companyId,
-      periodStart: input.periodStart,
-      periodEnd: input.periodEnd,
-      issueDate,
-      dueDate,
-      workIds: input.workIds,
-      subtotal,
-      discount,
-      taxRate,
-      taxAmount,
-      total,
-      status: input.status,
-      notes: input.notes,
-      createdAt: todayISO(),
-      paidAt: input.status === 'paid' ? todayISO() : null,
-    };
-    setData((prev) => ({
-      ...prev,
-      invoices: [invoice, ...prev.invoices],
-      works: prev.works.map((w) => (input.workIds.includes(w.id) ? { ...w, invoiceId: invoice.id } : w)),
-    }));
-    dataRef.current = {
-      ...dataRef.current,
-      invoices: [invoice, ...dataRef.current.invoices],
-      works: dataRef.current.works.map((w) => (input.workIds.includes(w.id) ? { ...w, invoiceId: invoice.id } : w)),
-    };
-    return invoice;
-  }, []);
-
-  const setInvoiceStatus = useCallback((id: ID, status: InvoiceStatus) => {
-    setData((d) => ({
-      ...d,
-      invoices: d.invoices.map((i) =>
-        i.id === id
-          ? { ...i, status, paidAt: status === 'paid' ? i.paidAt ?? todayISO() : null }
-          : i
-      ),
-    }));
-  }, []);
-
-  const updateInvoiceNotes = useCallback((id: ID, notes: string) => {
-    setData((d) => ({
-      ...d,
-      invoices: d.invoices.map((i) => (i.id === id ? { ...i, notes } : i)),
-    }));
-  }, []);
-
-  const deleteInvoice = useCallback((id: ID) => {
-    setData((d) => ({
-      ...d,
-      invoices: d.invoices.filter((i) => i.id !== id),
-      works: d.works.map((w) => (w.invoiceId === id ? { ...w, invoiceId: null } : w)),
-    }));
-  }, []);
-
-  const updateSettings = useCallback((patch: Partial<Settings>) => {
-    setData((d) => ({ ...d, settings: { ...d.settings, ...patch } }));
-  }, []);
-
-  const updateCurrency = useCallback((next: CurrencySettings) => {
-    setData((d) => ({ ...d, settings: { ...d.settings, currency: next } }));
-  }, []);
-
-  const addUser = useCallback((name: string, role: Role): AppUser => {
-    const user: AppUser = { id: uid('u'), name: name.trim(), role };
-    setData((d) => ({ ...d, users: [...d.users, user] }));
-    dataRef.current = { ...dataRef.current, users: [...dataRef.current.users, user] };
-    return user;
-  }, []);
-
-  const updateUser = useCallback((id: ID, patch: { name?: string; role?: Role }): boolean => {
-    const users = dataRef.current.users;
-    const target = users.find((u) => u.id === id);
-    if (!target) return false;
-    const managers = users.filter((u) => u.role === 'manager').length;
-    // حماية دور المدير: لا يمكن تجريد آخر مدير من صلاحياته الكاملة
-    if (target.role === 'manager' && managers <= 1 && patch.role && patch.role !== 'manager') return false;
-    const nextUsers = users.map((u) =>
-      u.id === id
-        ? {
-            ...u,
-            name: patch.name !== undefined && patch.name.trim() ? patch.name.trim() : u.name,
-            role: patch.role ?? u.role,
-          }
-        : u
-    );
-    setData((d) => ({ ...d, users: nextUsers }));
-    dataRef.current = { ...dataRef.current, users: nextUsers };
-    return true;
-  }, []);
-
-  const deleteUser = useCallback((id: ID): boolean => {
-    const current = dataRef.current.users;
-    if (current.length <= 1) return false;
-    const target = current.find((u) => u.id === id);
-    const managers = current.filter((u) => u.role === 'manager').length;
-    // لا يمكن حذف المدير الوحيد حتى تبقى إدارة التطبيق متاحة بالكامل
-    if (target?.role === 'manager' && managers <= 1) return false;
-    const remaining = current.filter((u) => u.id !== id);
-    const nextId = dataRef.current.currentUserId === id ? remaining[0].id : dataRef.current.currentUserId;
-    setData((d) => ({ ...d, users: remaining, currentUserId: d.currentUserId === id ? nextId : d.currentUserId }));
-    dataRef.current = { ...dataRef.current, users: remaining, currentUserId: nextId };
-    return true;
-  }, []);
-
-  const clearAllData = useCallback(() => {
-    clearData();
-    setData((d) => ({
-      companies: [],
-      works: [],
-      invoices: [],
-      settings: d.settings,
-      users: d.users.length ? d.users : buildSeedData().users,
-      currentUserId: d.currentUserId,
-    }));
-  }, []);
-
-  const alerts = useMemo<AlertItem[]>(() => {
-    const today = todayISO();
-    const list: AlertItem[] = [];
-    const monthKey = currentMonthKey();
-
-    data.invoices
-      .filter((i) => i.status === 'issued' && i.dueDate < today)
-      .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1))
-      .forEach((i) => {
-        const company = data.companies.find((c) => c.id === i.companyId);
-        list.push({
-          id: `overdue_${i.id}`,
-          kind: 'overdue',
-          severity: 'danger',
-          title: `فاتورة متأخرة ${i.number}`,
-          body: `${company?.name ?? 'عميل'} • متأخرة ${Math.abs(daysBetween(i.dueDate, today))} يوم • ${formatMoney(
-            i.total,
-            currency
-          )}`,
-          invoiceId: i.id,
-          companyId: i.companyId,
-          amount: i.total,
-        });
-      });
-
-    data.invoices
-      .filter((i) => i.status === 'issued' && i.dueDate >= today)
-      .forEach((i) => {
-        const company = data.companies.find((c) => c.id === i.companyId);
-        list.push({
-          id: `unpaid_${i.id}`,
-          kind: 'unpaid',
-          severity: 'warning',
-          title: `فاتورة بانتظار التحصيل ${i.number}`,
-          body: `${company?.name ?? 'عميل'} • الاستحقاق ${i.dueDate} • ${formatMoney(i.total, currency)}`,
-          invoiceId: i.id,
-          companyId: i.companyId,
-          amount: i.total,
-        });
-      });
-
-    data.invoices
-      .filter((i) => i.status === 'draft')
-      .forEach((i) => {
-        const company = data.companies.find((c) => c.id === i.companyId);
-        list.push({
-          id: `draft_${i.id}`,
-          kind: 'draft',
-          severity: 'info',
-          title: `مسودة فاتورة ${i.number}`,
-          body: `${company?.name ?? 'عميل'} • بانتظار الإصدار • ${formatMoney(i.total, currency)}`,
-          invoiceId: i.id,
-          companyId: i.companyId,
-          amount: i.total,
-        });
-      });
-
-    const monthWorks = data.works.filter((w) => monthKeyOf(w.date) === monthKey);
-    const monthRevenue = monthWorks.reduce((s, w) => s + (Number(w.quantity) || 0) * (Number(w.unitPrice) || 0), 0);
-    const limit = data.settings.monthlyLimit || 0;
-    if (limit > 0 && monthRevenue > limit) {
-      list.push({
-        id: 'limit_month',
-        kind: 'limit',
-        severity: 'warning',
-        title: 'تجاوز الحد المالي الشهري',
-        body: `إيراد ${monthLabel(monthKey)} بلغ ${formatMoney(monthRevenue, currency)} من حد ${formatMoney(
-          limit,
-          currency
-        )}`,
-        amount: monthRevenue,
-      });
-    }
-
-    const unbilledByCompany = new Map<ID, { count: number; total: number }>();
-    data.works
-      .filter((w) => !w.invoiceId)
-      .forEach((w) => {
-        const entry = unbilledByCompany.get(w.companyId) ?? { count: 0, total: 0 };
-        entry.count += 1;
-        entry.total += (Number(w.quantity) || 0) * (Number(w.unitPrice) || 0);
-        unbilledByCompany.set(w.companyId, entry);
-      });
-    unbilledByCompany.forEach((value, companyId) => {
-      if (value.total <= 0) return;
-      const company = data.companies.find((c) => c.id === companyId);
-      list.push({
-        id: `unbilled_${companyId}`,
-        kind: 'unbilled',
-        severity: 'info',
-        title: `أعمال غير مفوترة - ${company?.name ?? 'عميل'}`,
-        body: `${value.count} عمل بقيمة ${formatMoney(value.total, currency)} لم تُدرج في فاتورة`,
-        companyId,
-        amount: value.total,
-      });
-    });
-
-    const order = { danger: 0, warning: 1, info: 2 } as const;
-    return list.sort((a, b) => order[a.severity] - order[b.severity]);
-  }, [data.invoices, data.works, data.companies, data.settings.monthlyLimit, currency]);
-
-  const value: AppContextValue = {
-    ready,
-    companies: data.companies,
-    works: data.works,
-    invoices: data.invoices,
-    settings: data.settings,
-    users: data.users,
-    currentUser,
-    role: currentUser.role,
-    currency,
-    alerts,
-    toast,
-    showToast,
-    setCurrentUserId,
-    saveCompany,
-    deleteCompany,
-    saveWork,
-    deleteWork,
-    unlinkWork,
-    createInvoice,
-    setInvoiceStatus,
-    updateInvoiceNotes,
-    deleteInvoice,
-    updateSettings,
-    updateCurrency,
-    addUser,
-    updateUser,
-    deleteUser,
-    clearAllData,
-    companyById,
-    worksOfCompany,
-    invoicesOfCompany,
-    unbilledWorks,
-    invoiceItems,
-    workTotal,
-  };
-
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
-}
-
-export function useApp(): AppContextValue {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error('useApp must be used inside AppProvider');
-  return ctx;
-}
-
-/** مؤشرات مالية محسوبة جاهزة للاستخدام في الشاشات */
-export function useMetrics() {
-  const { works, invoices, currency, settings, workTotal } = useApp();
-  return useMemo(() => {
-    const monthKey = currentMonthKey();
-    const keys6 = lastMonthKeys(6);
-    const monthWorks = works.filter((w) => monthKeyOf(w.date) === monthKey);
-    const monthRevenue = monthWorks.reduce((s, w) => s + workTotal(w), 0);
-    const today = todayISO();
-    const todayWorks = works.filter((w) => w.date === today);
-    const outstanding = invoices.filter((i) => i.status === 'issued');
-    const outstandingTotal = outstanding.reduce((s, i) => s + i.total, 0);
-    const overdue = outstanding.filter((i) => i.dueDate < today);
-    const overdueTotal = overdue.reduce((s, i) => s + i.total, 0);
-    const collected = invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + i.total, 0);
-    const totalInvoiced = invoices.reduce((s, i) => s + i.total, 0);
-    const unbilled = works.filter((w) => !w.invoiceId);
-    const unbilledTotal = unbilled.reduce((s, w) => s + workTotal(w), 0);
-    const series = keys6.map((k) => ({
-      key: k,
-      label: monthLabel(k),
-      value: works.filter((w) => monthKeyOf(w.date) === k).reduce((s, w) => s + workTotal(w), 0),
-    }));
-    const topClients = keys6
-      .slice(-3)
-      .flatMap((k) => works.filter((w) => monthKeyOf(w.date) === k))
-      .reduce<{ id: ID; total: number; count: number }[]>((acc, w) => {
-        const found = acc.find((a) => a.id === w.companyId);
-        if (found) {
-          found.total += workTotal(w);
-          found.count += 1;
-        } else {
-          acc.push({ id: w.companyId, total: workTotal(w), count: 1 });
-        }
-        return acc;
-      }, [])
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
-
-    return {
-      monthKey,
-      monthLabel: monthLabel(monthKey),
-      monthRevenue,
-      monthWorksCount: monthWorks.length,
-      todayWorks,
-      todayRevenue: todayWorks.reduce((s, w) => s + workTotal(w), 0),
-      outstanding,
-      outstandingTotal,
-      overdue,
-      overdueTotal,
-      collected,
-      totalInvoiced,
-      collectionRate: totalInvoiced ? Math.round((collected / totalInvoiced) * 100) : 0,
-      averageInvoice: invoices.length ? totalInvoiced / invoices.length : 0,
-      unbilled,
-      unbilledTotal,
-      series,
-      topClients,
-      limit: settings.monthlyLimit,
-      limitUsedPct: settings.monthlyLimit ? Math.min(100, Math.round((monthRevenue / settings.monthlyLimit) * 100)) : 0,
-      currency,
-      allRevenue: works.reduce((s, w) => s + workTotal(w), 0),
-    };
-  }, [works, invoices, currency, settings.monthlyLimit, workTotal]);
-}
-
-export { addMonthsToKey, currentMonthKey, monthLabel };
