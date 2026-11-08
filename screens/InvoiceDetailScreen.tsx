@@ -56,9 +56,7 @@ export default function InvoiceDetailScreen() {
     workTotal,
   } = useApp();
 
-  const invoice = invoices.find((i) => i.id === route.params?.invoiceId);
-  const [statusOpen, setStatusOpen] = useState(false);
-  const [notesOpen, setNotesOpen] = useState(false);
+const { invoices, addVoucherAndUpdateInvoice } = useApp(); // أو useContext(AppContext) 
   const [notesDraft, setNotesDraft] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -334,6 +332,73 @@ export default function InvoiceDetailScreen() {
                 <Btn label="إلغاء" variant="outline" onPress={() => setNotesOpen(false)} />
               </View>
             </View>
+                  {/* ================= بداية كود واجهة السداد وإصدار السندات الجديد ================= */}
+      <View style={{ backgroundColor: '#1C2541', padding: 16, borderRadius: 12, marginTop: 16, marginHorizontal: 16 }}>
+        <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: 'bold', textAlign: 'right', marginBottom: 12 }}>
+          تسجيل دفعة ماليّة (سند قبض)
+        </Text>
+        
+        {/* عرض تفاصيل المتبقي والمستلم */}
+        <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: 12 }}>
+          <Text style={{ color: '#94A3B8', fontSize: 14 }}>المبلغ المتبقي الحالي:</Text>
+          <Text style={{ color: '#EF4444', fontSize: 15, fontWeight: 'bold' }}>
+            {(invoice.remainingAmount !== undefined ? invoice.remainingAmount : invoice.total).toLocaleString()} ر.ي
+          </Text>
+        </View>
+
+        {/* حقل إدخال مبلغ السداد */}
+        <TextInput
+          style={{
+            backgroundColor: '#0B132B',
+            color: '#FFFFFF',
+            padding: 12,
+            borderRadius: 8,
+            marginBottom: 12,
+            textAlign: 'right'
+          }}
+          placeholder="أدخل المبلغ المراد تحصيله (ر.ي)"
+          placeholderTextColor="#64748B"
+          keyboardType="numeric"
+          onChangeText={(val) => {
+            // تعريف متغير محلي لحفظ القيمة المؤقتة داخل الشاشة
+            this.paymentAmountInput = Number(val); 
+          }}
+        />
+
+        {/* زر تأكيد التحصيل وإصدار السند المحاسبي */}
+        <TouchableOpacity
+          style={{ backgroundColor: '#10B981', padding: 12, borderRadius: 8, alignItems: 'center' }}
+          onPress={() => {
+            const amountToPay = this.paymentAmountInput;
+            const remaining = invoice.remainingAmount !== undefined ? invoice.remainingAmount : invoice.total;
+
+            if (!amountToPay || isNaN(amountToPay) || amountToPay <= 0) {
+              alert('يرجى إدخال مبلغ صحيح أكبر من الصفر');
+              return;
+            }
+            if (amountToPay > remaining) {
+              alert('المبلغ المدخل أكبر من المتبقي في الفاتورة!');
+              return;
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+
+            // استدعاء الدالة لخصم الدفعة وتحديث الفاتورة وتوليد السند والحركة النقدية تلقائياً
+            addVoucherAndUpdateInvoice({
+              type: 'receipt', // سند قبض
+              companyId: invoice.companyId,
+              amount: amountToPay,
+              date: today,
+              description: `دفعة مالية من فاتورة رقم (${invoice.number || invoice.id})`
+            }, invoice.id);
+
+            alert('تم إصدار سند القبض بنجاح وتحديث حساب الفاتورة والصندوق');
+          }}
+        >
+          <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 }}>تأكيد التحصيل وإصدار السند</Text>
+        </TouchableOpacity>
+      </View>
+      {/* ================= نهاية كود واجهة السداد وإصدار السندات الجديد ================= */}
           </View>
         </View>
       </Modal>
